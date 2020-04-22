@@ -99,6 +99,7 @@ urlpatterns = [
 ```
 $ python manage.py runserver
 ```
+6. Go to http://localhost:8000/polls/ in your browser.
 
 
 ## Part 2: Database
@@ -204,6 +205,147 @@ datetime.datetime(2012, 2, 26, 13, 0, 0, 775217, tzinfo=<UTC>)
 >>> Question.objects.all()
 <QuerySet [<Question: Question object (1)>]>
 ```
+3. Open **polls/models.py**
+Add a **__str__()** method to both **Question** and **Choice** to make the representation of object understandable instead of **Question object (1)**.
+```
+from django.db import models
+
+class Question(models.Model):
+    # ...
+    def __str__(self):
+        return self.question_text
+
+class Choice(models.Model):
+    # ...
+    def __str__(self):
+        return self.choice_text
+```
+4. Add a custom method for the date in **polls/models.py**.
+Note the addition of **import datetime** and **from django.utils import timezone**.
+```
+import datetime
+
+from django.db import models
+from django.utils import timezone
+
+
+class Question(models.Model):
+    # ...
+    def was_published_recently(self):
+        return self.pub_date >= timezone.now() - datetime.timedelta(days=1)
+```
+5. Run a new shell by running **python manage.py shell** and run the ff code.
+```
+>>> from polls.models import Choice, Question
+
+# Make sure our __str__() addition worked.
+>>> Question.objects.all()
+<QuerySet [<Question: What's up?>]>
+
+# Django provides a rich database lookup API that's entirely driven by
+# keyword arguments.
+>>> Question.objects.filter(id=1)
+<QuerySet [<Question: What's up?>]>
+>>> Question.objects.filter(question_text__startswith='What')
+<QuerySet [<Question: What's up?>]>
+
+# Get the question that was published this year.
+>>> from django.utils import timezone
+>>> current_year = timezone.now().year
+>>> Question.objects.get(pub_date__year=current_year)
+<Question: What's up?>
+
+# Request an ID that doesn't exist, this will raise an exception.
+>>> Question.objects.get(id=2)
+Traceback (most recent call last):
+    ...
+DoesNotExist: Question matching query does not exist.
+
+# Lookup by a primary key is the most common case, so Django provides a
+# shortcut for primary-key exact lookups.
+# The following is identical to Question.objects.get(id=1).
+>>> Question.objects.get(pk=1)
+<Question: What's up?>
+
+# Make sure our custom method worked.
+>>> q = Question.objects.get(pk=1)
+>>> q.was_published_recently()
+True
+
+# Give the Question a couple of Choices. The create call constructs a new
+# Choice object, does the INSERT statement, adds the choice to the set
+# of available choices and returns the new Choice object. Django creates
+# a set to hold the "other side" of a ForeignKey relation
+# (e.g. a question's choice) which can be accessed via the API.
+>>> q = Question.objects.get(pk=1)
+
+# Display any choices from the related object set -- none so far.
+>>> q.choice_set.all()
+<QuerySet []>
+
+# Create three choices.
+>>> q.choice_set.create(choice_text='Not much', votes=0)
+<Choice: Not much>
+>>> q.choice_set.create(choice_text='The sky', votes=0)
+<Choice: The sky>
+>>> c = q.choice_set.create(choice_text='Just hacking again', votes=0)
+
+# Choice objects have API access to their related Question objects.
+>>> c.question
+<Question: What's up?>
+
+# And vice versa: Question objects get access to Choice objects.
+>>> q.choice_set.all()
+<QuerySet [<Choice: Not much>, <Choice: The sky>, <Choice: Just hacking again>]>
+>>> q.choice_set.count()
+3
+
+# The API automatically follows relationships as far as you need.
+# Use double underscores to separate relationships.
+# This works as many levels deep as you want; there's no limit.
+# Find all Choices for any question whose pub_date is in this year
+# (reusing the 'current_year' variable we created above).
+>>> Choice.objects.filter(question__pub_date__year=current_year)
+<QuerySet [<Choice: Not much>, <Choice: The sky>, <Choice: Just hacking again>]>
+
+# Let's delete one of the choices. Use delete() for that.
+>>> c = q.choice_set.filter(choice_text__startswith='Just hacking')
+>>> c.delete()
+```
+
+### Setting Up the Admin Site
+1. Run the ff code to create an admin user.
+```
+$ python manage.py createsuperuser
+```
+2. Enter the desired username, email address and password.
+```
+Username: admin
+Email address: admin@example.com
+Password: **********
+Password (again): *********
+Superuser created successfully.
+```
+3. Run the ff code to start the development server.
+```
+$ python manage.py runserver
+```
+4. Go to http://127.0.0.1:8000/admin/ in your browser.
+5. Login to the superuser account using the above credentials.
+6. Make the Poll App modifiable in the admin.
+Open the **polls/admin.py** and add the ff code.
+This will tell the admin that **Question** objects have an admin interface.
+```
+from django.contrib import admin
+
+from .models import Question
+
+admin.site.register(Question)
+```
+7. Refresh the admin index page in your browser to check if all are ok.
+8. Click **Questions** then **What's up?** in your admin.
+Change the **Date publlished** by clicking the **Today** and **Now** shortcuts.
+Click **Save and continue editing"** then click **History** to check all the changes we've made.
 
 
 ## Part 6: Adding Style to your Django
