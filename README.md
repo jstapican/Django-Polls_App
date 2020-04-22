@@ -348,6 +348,306 @@ Change the **Date publlished** by clicking the **Today** and **Now** shortcuts.
 Click **Save and continue editing"** then click **History** to check all the changes we've made.
 
 
+## Part 3: Adding More Views, 404 Error, Removing Hardcoded URLs and Namespacing URL Names
+
+### Adding More Views
+1. Open **polls/views.py** and add the ff code.
+```
+def detail(request, question_id):
+    return HttpResponse("You're looking at question %s." % question_id)
+
+def results(request, question_id):
+    response = "You're looking at the results of question %s."
+    return HttpResponse(response % question_id)
+
+def vote(request, question_id):
+    return HttpResponse("You're voting on question %s." % question_id)
+```
+2. Open **polls/urls.py** and add the following **path()** calls.
+```
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    # ex: /polls/
+    path('', views.index, name='index'),
+    # ex: /polls/5/
+    path('<int:question_id>/', views.detail, name='detail'),
+    # ex: /polls/5/results/
+    path('<int:question_id>/results/', views.results, name='results'),
+    # ex: /polls/5/vote/
+    path('<int:question_id>/vote/', views.vote, name='vote'),
+]
+```
+3. Open **polls/view** and add the ff code.
+This will update the **index()** view which will display the latest 5 poll questions in the system, separated by commas, according to publication date.
+```
+from django.http import HttpResponse
+
+from .models import Question
+
+
+def index(request):
+    latest_question_list = Question.objects.order_by('-pub_date')[:5]
+    output = ', '.join([q.question_text for q in latest_question_list])
+    return HttpResponse(output)
+
+# Leave the rest of the views (detail, results, vote) unchanged
+```
+4. Separate the design from Python by creating a template.
+Create **polls/templates/polls** directory.
+5. Create a new file **polls/templates/polls/index.html** and put the ff code.
+```
+{% if latest_question_list %}
+    <ul>
+    {% for question in latest_question_list %}
+        <li><a href="/polls/{{ question.id }}/">{{ question.question_text }}</a></li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>No polls are available.</p>
+{% endif %}
+```
+6. Update our **index** view in **polls/views.py** to use the template.
+```
+from django.http import HttpResponse
+from django.template import loader
+
+from .models import Question
+
+
+def index(request):
+    latest_question_list = Question.objects.order_by('-pub_date')[:5]
+    template = loader.get_template('polls/index.html')
+    context = {
+        'latest_question_list': latest_question_list,
+    }
+    return HttpResponse(template.render(context, request))
+```
+7. Use **render()** as a shortcut for loading a template, filling a context and returning an **HttpResponse** object with the result of the rendered template.
+Update the **index** view again with the ff code.
+```
+from django.shortcuts import render
+
+from .models import Question
+
+
+def index(request):
+    latest_question_list = Question.objects.order_by('-pub_date')[:5]
+    context = {'latest_question_list': latest_question_list}
+    return render(request, 'polls/index.html', context)
+```
+
+### Raising a 404 Error
+1. Add the ff code in **polls/views.py**.
+```
+from django.http import Http404
+from django.shortcuts import render
+
+from .models import Question
+# ...
+def detail(request, question_id):
+    try:
+        question = Question.objects.get(pk=question_id)
+    except Question.DoesNotExist:
+        raise Http404("Question does not exist")
+    return render(request, 'polls/detail.html', {'question': question})
+```
+2. Add the ff code in **polls/detail.html** to test.
+```
+{{ question }}
+```
+3. It's very common to use **get()** and raise **Http404** if the object doesn't exist.
+We can use **get_object_or_404** for this in the updated **polls/views.py**.
+```
+from django.shortcuts import get_object_or_404, render
+
+from .models import Question
+# ...
+def detail(request, question_id):
+    question = get_object_or_404(Question, pk=question_id)
+    return render(request, 'polls/detail.html', {'question': question})
+```
+
+### Use the Template system
+1. Open **polls/templates/polls/detail.html** and add the ff code.
+```
+<h1>{{ question.question_text }}</h1>
+<ul>
+{% for choice in question.choice_set.all %}
+    <li>{{ choice.choice_text }}</li>
+{% endfor %}
+</ul>
+```
+
+### Removing Hardcoded URLs in the TEMPLATES
+1. Open **polls/index.html** and change the hardcoded code from
+```
+<li><a href="/polls/{{ question.id }}/">{{ question.question_text }}</a></li>
+```
+to
+```
+<li><a href="{% url 'detail' question.id %}">{{ question.question_text }}</a></li>
+```
+2. Open **polls/urls.py**. Make sure the ff code is there.
+```
+...
+# the 'name' value as called by the {% url %} template tag
+path('<int:question_id>/', views.detail, name='detail'),
+...
+```
+
+### Namespacing URL Names
+1. Add namespaces to your URLconf to help Django know which app view to create for a url when using the **{% url %}**.
+Open **polls/urls.py** and add **app_name**.
+```
+from django.urls import path
+
+from . import views
+
+app_name = 'polls'
+urlpatterns = [
+    path('', views.index, name='index'),
+    path('<int:question_id>/', views.detail, name='detail'),
+    path('<int:question_id>/results/', views.results, name='results'),
+    path('<int:question_id>/vote/', views.vote, name='vote'),
+]
+```
+2. Change **polls/index.html** from
+```
+<li><a href="{% url 'detail' question.id %}">{{ question.question_text }}</a></li>
+```
+to
+```
+<li><a href="{% url 'polls:detail' question.id %}">{{ question.question_text }}</a></li>
+```
+
+
+## Part 4: Form Processing and Code Cutting
+
+### Write a Minimal form
+1. Open **polls/templates/polls/detail.html** and add an HTML **<form>** element.
+```
+<h1>{{ question.question_text }}</h1>
+
+{% if error_message %}<p><strong>{{ error_message }}</strong></p>{% endif %}
+
+<form action="{% url 'polls:vote' question.id %}" method="post">
+{% csrf_token %}
+{% for choice in question.choice_set.all %}
+    <input type="radio" name="choice" id="choice{{ forloop.counter }}" value="{{ choice.id }}">
+    <label for="choice{{ forloop.counter }}">{{ choice.choice_text }}</label><br>
+{% endfor %}
+<input type="submit" value="Vote">
+</form>
+```
+2. Add the ff code in **polls/views.py**.
+```
+from django.http import HttpResponse, HttpResponseRedirect
+from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
+
+from .models import Choice, Question
+# ...
+def vote(request, question_id):
+    question = get_object_or_404(Question, pk=question_id)
+    try:
+        selected_choice = question.choice_set.get(pk=request.POST['choice'])
+    except (KeyError, Choice.DoesNotExist):
+        # Redisplay the question voting form.
+        return render(request, 'polls/detail.html', {
+            'question': question,
+            'error_message': "You didn't select a choice.",
+        })
+    else:
+        selected_choice.votes += 1
+        selected_choice.save()
+        # Always return an HttpResponseRedirect after successfully dealing
+        # with POST data. This prevents data from being posted twice if a
+        # user hits the Back button.
+        return HttpResponseRedirect(reverse('polls:results', args=(question.id,)))
+```
+3. Add the ff code for results view.
+```
+from django.shortcuts import get_object_or_404, render
+
+
+def results(request, question_id):
+    question = get_object_or_404(Question, pk=question_id)
+    return render(request, 'polls/results.html', {'question': question})
+```
+4. Create **polls/results.html** template.
+```
+<h1>{{ question.question_text }}</h1>
+
+<ul>
+{% for choice in question.choice_set.all %}
+    <li>{{ choice.choice_text }} -- {{ choice.votes }} vote{{ choice.votes|pluralize }}</li>
+{% endfor %}
+</ul>
+
+<a href="{% url 'polls:detail' question.id %}">Vote again?</a>
+```
+
+### Use Generic views
+1. Amend URLconf. Open **polls/urls.py** and update it with the ff code.
+```
+from django.urls import path
+
+from . import views
+
+app_name = 'polls'
+urlpatterns = [
+    path('', views.IndexView.as_view(), name='index'),
+    path('<int:pk>/', views.DetailView.as_view(), name='detail'),
+    path('<int:pk>/results/', views.ResultsView.as_view(), name='results'),
+    path('<int:question_id>/vote/', views.vote, name='vote'),
+]
+```
+2. Amend views. Open **polls/views.py** and update it with the ff code.
+```
+from django.http import HttpResponseRedirect
+from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
+from django.views import generic
+
+from .models import Choice, Question
+
+
+class IndexView(generic.ListView):
+    template_name = 'polls/index.html'
+    context_object_name = 'latest_question_list'
+
+    def get_queryset(self):
+        """Return the last five published questions."""
+        return Question.objects.order_by('-pub_date')[:5]
+
+
+class DetailView(generic.DetailView):
+    model = Question
+    template_name = 'polls/detail.html'
+
+
+class ResultsView(generic.DetailView):
+    model = Question
+    template_name = 'polls/results.html'
+
+
+def vote(request, question_id):
+    ... # same as above, no changes needed.
+```
+
+
+## Part 5: Automated Tests
+
+### Writing our First Test
+1. There's a bug in the polls application where it returns **True** if the **Question** was published in the future.
+Run shell command.
+```
+$ python manage.py shell
+```
+
 ## Part 6: Adding Style to your Django
 
 ### Customize your app's look and feel
