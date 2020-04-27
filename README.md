@@ -844,7 +844,7 @@ class QuestionIndexViewTests(TestCase):
         )
 ```
 
-### Testing for the DetailView.
+### Testing for the DetailView
 1. Even though future questions don’t appear in the index, users can still reach them if they know or guess the right URL.
 So we need to add a similar constraint to **DetailView**. Open **polls/views.py** and add the ff code.
 ```
@@ -919,4 +919,130 @@ body {
 3. Run server to test.
 ```
 $ python manage.py runserver
+```
+
+## Part 7: Customizing the Admin form
+
+### Changing the Ordering of Fields and Application of Fieldsets
+1. Let's try to reorder the fields on the edit form.
+Open **polls/admin.py** and replace the **admin.site.register(Question)** with the ff code.
+```
+from django.contrib import admin
+
+from .models import Question
+
+
+class QuestionAdmin(admin.ModelAdmin):
+    fields = ['pub_date', 'question_text']
+
+admin.site.register(Question, QuestionAdmin)
+```
+2. Split the form up into fieldsets especially if you have dozen of fields.
+Change **polls/admin.py** with the ff code.
+```
+from django.contrib import admin
+
+from .models import Question
+
+
+class QuestionAdmin(admin.ModelAdmin):
+    fieldsets = [
+        (None,               {'fields': ['question_text']}),
+        ('Date information', {'fields': ['pub_date']}),
+    ]
+
+admin.site.register(Question, QuestionAdmin)
+```
+
+### Adding Related Objects (Displaying Choices in Admin)
+1. Register **Choice** with the admin. Open **polls/admin.py** and add the ff code.
+```
+from django.contrib import admin
+
+from .models import Choice, Question
+# ...
+admin.site.register(Choice)
+```
+2. Let's update the code so that we can add a bunch of Choices directly when you create the **Question** object.
+First remove the **register()** call for the **Choice** model. Then edit the **Question** registration code.
+```
+from django.contrib import admin
+
+from .models import Choice, Question
+
+
+class ChoiceInline(admin.StackedInline):
+    model = Choice
+    extra = 3
+
+
+class QuestionAdmin(admin.ModelAdmin):
+    fieldsets = [
+        (None,               {'fields': ['question_text']}),
+        ('Date information', {'fields': ['pub_date'], 'classes': ['collapse']}),
+    ]
+    inlines = [ChoiceInline]
+
+admin.site.register(Question, QuestionAdmin)
+```
+3. It takes a lot of screen space to display all the fields for entering related **Choice** objects.
+For that reason, Django offers a tabular way of displaying inline related objects.
+Let's update the **ChoiceInline** declaration with the ff code.
+```
+class ChoiceInline(admin.TabularInline):
+    #...
+```
+
+### Customize the Admin Change List
+1. By default, Django displays the **str()** of each object. But sometimes it’d be more helpful if we could display individual fields.
+Let's open **polls/admin.py** and add the ff code.
+```
+class QuestionAdmin(admin.ModelAdmin):
+    # ...
+    list_display = ('question_text', 'pub_date', 'was_published_recently')
+```
+2. We can also give some attributes. Let's change the header for the **was_published_recently** column field.
+Open **polls/models.py** and add the ff code.
+```
+class Question(models.Model):
+    # ...
+    def was_published_recently(self):
+        now = timezone.now()
+        return now - datetime.timedelta(days=1) <= self.pub_date <= now
+    was_published_recently.admin_order_field = 'pub_date'
+    was_published_recently.boolean = True
+    was_published_recently.short_description = 'Published recently?'
+```
+3. We can also add some filters using **list_filter**.
+Open **polls/admin.py** and add the ff code to **QuestionAdmin**.
+```
+list_filter = ['pub_date']
+```
+4. Let's add a search feature. Add the ff code.
+```
+search_fields = ['question_text']
+```
+
+### Customize the Admin Look and Feel
+1. Go to the main directory that contains **manage.py** and create a **mysite/templates/admin** directory.
+2. Open **mysite/settings.py** and add a **DIRS** option in the **TEMPLATES** setting.
+```
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+```
+3. Inside **mysite/templates/admin** copy the template **admin/base_site.html** from the default Django admin template in the source code directory.
+4. Open **base_site.html** and change **{{ site_header|default:_('Django administration') }}** with your own site's name. Don't forget to remove  the curly braces.
 ```
